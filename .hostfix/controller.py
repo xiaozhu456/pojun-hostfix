@@ -160,11 +160,13 @@ def prepare(destination, requested_tag=""):
     info = {"repository": REPO, "version": selected.removeprefix("v"),
             "upstream_repository": UPSTREAM, "upstream_tag": tag,
             "upstream_commit": commit, "patch_sha256": patch_hash, "policy_sha256": policy_hash}
-    (destination / ".hostfix/build-info.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
+    (destination / ".hostfix/build-info.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8", newline="\n")
     run(["git", "config", "user.name", "pojun-hostfix[bot]"], destination)
     run(["git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"], destination)
     run(["git", "add", "-A"], destination)
-    run(["git", "diff", "--cached", "--check"], destination)
+    # Unified diff context deliberately contains single-space blank lines.
+    # Check source and policy files, not whitespace inside the patch artifact.
+    run(["git", "diff", "--cached", "--check", "--", ".", ":(exclude).hostfix/series.patch"], destination)
     run(["git", "commit", "-m", "hostfix: prepare " + selected], destination)
     run(["git", "branch", "-f", "hostfix-candidate", "HEAD"], destination)
     output(build="true", version=selected, upstream=tag)
@@ -181,17 +183,17 @@ def package(candidate, destination):
             raise ValueError("release archive is incomplete")
     shutil.copyfile(archive, destination / name)
     sums = sha(archive) + "  " + name + "\n"
-    (destination / "SHA256SUMS").write_text(sums, encoding="ascii")
+    (destination / "SHA256SUMS").write_text(sums, encoding="ascii", newline="\n")
     info["source_commit"] = run(["git", "rev-parse", "HEAD"], candidate, True)
     info["archive_sha256"] = sha(archive)
-    (destination / "build-info.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
+    (destination / "build-info.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8", newline="\n")
     shutil.copyfile(candidate / "install.sh", destination / "install.sh")
     run(["git", "bundle", "create", str(destination / "candidate.bundle"), "refs/heads/hostfix-candidate"], candidate)
     (destination / "RELEASE_NOTES.md").write_text(
         "Upstream: " + UPSTREAM + " " + info["upstream_tag"] + " (`" + info["upstream_commit"] + "`)\n\n"
         "Host tool detection, installer validation, and the hostfix update channel are included.\n\n"
         "Patch SHA256: `" + info["patch_sha256"] + "`\nSource commit: `" + info["source_commit"] + "`\n",
-        encoding="utf-8")
+        encoding="utf-8", newline="\n")
 
 
 def git_auth_env():
@@ -239,7 +241,7 @@ def heartbeat():
     previous = json.loads(state.read_text()).get("maintained_at") if state.exists() else None
     if previous and now - dt.datetime.fromisoformat(previous) < dt.timedelta(days=30):
         return
-    state.write_text(json.dumps({"maintained_at": now.isoformat()}, indent=2) + "\n", encoding="utf-8")
+    state.write_text(json.dumps({"maintained_at": now.isoformat()}, indent=2) + "\n", encoding="utf-8", newline="\n")
     run(["git", "config", "user.name", "pojun-hostfix[bot]"], ROOT)
     run(["git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"], ROOT)
     run(["git", "add", ".hostfix/state.json"], ROOT)
