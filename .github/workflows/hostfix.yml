@@ -1,0 +1,148 @@
+name: Hostfix release
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: 'Optional stable upstream tag (for example v0.4.39)'
+        required: false
+        default: ''
+  push:
+    branches: [main]
+    paths: ['.hostfix/**', '.github/workflows/hostfix.yml']
+
+concurrency:
+  group: hostfix-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      build: ${{ steps.prepare.outputs.build }}
+      version: ${{ steps.prepare.outputs.version }}
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: pojun
+          POSTGRES_PASSWORD: hostfix-test-only
+          POSTGRES_DB: pojun_ci
+        ports: ['15432:5432']
+        options: >-
+          --health-cmd "pg_isready -U pojun"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      POJUN_PG_DSN: postgres://pojun:hostfix-test-only@127.0.0.1:15432/pojun_ci?sslmode=disable
+      GOMAXPROCS: '2'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify release controller
+        run: python3 -m unittest discover -s .hostfix -p 'test_*.py' -v
+      - name: Prepare immutable patched source
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ inputs.upstream_tag }}
+        run: python3 .hostfix/controller.py prepare "$RUNNER_TEMP/candidate" --upstream-tag "$REQUESTED_TAG"
+      - uses: actions/setup-go@v6
+        if: steps.prepare.outputs.build == 'true'
+        with:
+          go-version-file: ${{ runner.temp }}/candidate/go.mod
+          check-latest: true
+          cache-dependency-path: ${{ runner.temp }}/candidate/go.sum
+      - uses: actions/setup-node@v5
+        if: steps.prepare.outputs.build == 'true'
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ${{ runner.temp }}/candidate/web/package-lock.json
+      - name: Build, vet, and full PostgreSQL regression
+        if: steps.prepare.outputs.build == 'true'
+        working-directory: ${{ runner.temp }}/candidate
+        run: |
+          go build ./...
+          go vet ./...
+          set -o pipefail
+          go test -json -p 1 ./... -count=1 -timeout=15m | tee "$RUNNER_TEMP/go-tests.jsonl"
+          python3 .hostfix/check_test_results.py "$RUNNER_TEMP/go-tests.jsonl"
+      - name: Export real frontend
+        if: steps.prepare.outputs.build == 'true'
+        working-directory: ${{ runner.temp }}/candidate/web
+        env:
+          NEXT_EXPORT: '1'
+        run: |
+          npm ci
+          npx tsc --noEmit
+          npx next build
+          mkdir -p ../server/webui/dist
+          cp -R out/. ../server/webui/dist/
+      - name: Build full Linux amd64 package
+        if: steps.prepare.outputs.build == 'true'
+        working-directory: ${{ runner.temp }}/candidate
+        env:
+          POJUN_BUILD_VERSION: ${{ steps.prepare.outputs.version }}
+          POJUN_SKIP_FRONTEND: '1'
+          POJUN_SKIP_NPM_CI: '1'
+          POJUN_COMPRESS: '0'
+          POJUN_PACKAGE: '1'
+        run: bash build.sh --target linux/amd64
+      - name: Exercise two real isolated upgrades and rejected corrupt update
+        if: steps.prepare.outputs.build == 'true'
+        working-directory: ${{ runner.temp }}/candidate
+        run: python3 .hostfix/upgrade_smoke.py --version '${{ steps.prepare.outputs.version }}'
+      - name: Package verified source and artifacts
+        if: steps.prepare.outputs.build == 'true'
+        run: |
+          git -C "$RUNNER_TEMP/candidate" diff --exit-code HEAD
+          python3 .hostfix/controller.py package "$RUNNER_TEMP/candidate" "$RUNNER_TEMP/release-artifacts"
+      - uses: actions/upload-artifact@v4
+        if: steps.prepare.outputs.build == 'true'
+        with:
+          name: verified-hostfix
+          path: ${{ runner.temp }}/release-artifacts
+          retention-days: 14
+          if-no-files-found: error
+
+  publish:
+    needs: verify
+    if: needs.verify.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: verified-hostfix
+          path: ${{ runner.temp }}/release-artifacts
+      - name: Publish without overwriting existing releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .hostfix/controller.py publish "$RUNNER_TEMP/release-artifacts" "$RUNNER_TEMP/release-source"
+
+  maintain-schedule:
+    needs: [verify, publish]
+    if: always() && needs.verify.result == 'success' && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Maintain repository activity every 30 days
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .hostfix/controller.py heartbeat
