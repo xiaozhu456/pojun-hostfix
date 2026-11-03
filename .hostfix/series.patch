@@ -1,0 +1,1017 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index a91ad2e..cba817a 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -2539,3 +2539,11 @@ done 18 / exhausted 99 / blocked 82——**exhausted 是 done 的 5.5 倍**，
+ | v0.4.15–0.4.16 | 证据卡交互重做 / 任务详情设置页 |
+ | v0.4.17–0.4.18 | 数据盘扩容迁移 / 附件 403 权限修复（0644 + fix-permissions） |
+ | v0.4.19 | 项目改名 Pojun：全局代码标识 / 二进制 / 目录 / 环境变量 / 镜像 / 仓库 |
++
++## 宿主工具修复通道（hostfix）
++
++- 工具体检按真实命令、Python 模块导入和字典文件检测，供页面和 Agent 共用。
++- 安装助手校验裸 ELF 与归档成员，保留受管理 Python 环境。
++- 主程序、助手和安装脚本统一从 `xiaozhu456/pojun-hostfix` 更新，不回退官方未修复包。
++- `X.Y.Z-hostfix.N` 支持同一上游版本上的修复升级；发布前执行完整回归和隔离升级验证。
++- 上游冲突或测试失败停止发布，保留最后可用版本。详情见 `.hostfix/README.md`。
+diff --git a/README.md b/README.md
+index e5b274f..0bc6521 100644
+--- a/README.md
++++ b/README.md
+@@ -1,3 +1,7 @@
++> **宿主工具修复发布通道：`xiaozhu456/pojun-hostfix`**
++> 请使用[本仓库的 Release](https://github.com/xiaozhu456/pojun-hostfix/releases)；部署后仍可网页一键升级。
++> 当前仅提供 Linux amd64 修复包，不提供修复版 Docker 镜像。修复会随验证通过的上游版本一起发布，冲突或测试失败时停止发布。[通道说明](.hostfix/README.md)
++
+ <div align="center">
+ 
+ # 破军 Pojun
+@@ -9,7 +13,7 @@
+ 
+ Go 单体后端（内嵌 Next.js 前端）· PostgreSQL · 多 Agent 自主推进 · 全程证据留痕
+ 
+-[![Release](https://img.shields.io/github/v/release/chu0119/Pojun?include_prereleases&label=release)](https://github.com/chu0119/Pojun/releases)
++[![Release](https://img.shields.io/github/v/release/xiaozhu456/pojun-hostfix?include_prereleases&label=release)](https://github.com/xiaozhu456/pojun-hostfix/releases)
+ [![CI](https://github.com/chu0119/Pojun/actions/workflows/ci.yml/badge.svg)](https://github.com/chu0119/Pojun/actions/workflows/ci.yml)
+ [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+ ![Platform](https://img.shields.io/badge/platform-linux-lightgrey)
+@@ -227,7 +231,7 @@ flowchart LR
+ 在**全新 Linux 服务器**（Debian/Ubuntu/CentOS/RHEL/Kali 等）上以 root 执行：
+ 
+ ```bash
+-curl -fsSL https://github.com/chu0119/Pojun/releases/latest/download/install.sh | sudo bash
++curl -fsSL https://github.com/xiaozhu456/pojun-hostfix/releases/latest/download/install.sh | sudo bash
+ ```
+ 
+ 脚本会交互式问你（直接回车用默认值）：
+@@ -242,7 +246,7 @@ curl -fsSL https://github.com/chu0119/Pojun/releases/latest/download/install.sh
+ 
+ ```bash
+ # 全默认（二进制、直连）
+-curl -fsSL https://github.com/chu0119/Pojun/releases/latest/download/install.sh | sudo bash -s -- -y
++curl -fsSL https://github.com/xiaozhu456/pojun-hostfix/releases/latest/download/install.sh | sudo bash -s -- -y
+ # 带代理 + 顺装常用渗透工具
+ curl -fsSL .../install.sh | sudo bash -s -- --install-proxy=http://10.0.0.14:7897 --with-tools
+ # Docker 形态
+@@ -254,7 +258,7 @@ curl -fsSL .../install.sh | sudo bash -s -- --mode=docker
+ 
+ ### 方式二：下载预编译包（Linux amd64 / arm64）
+ 
+-到 [Releases](https://github.com/chu0119/Pojun/releases) 下载
++到 [Releases](https://github.com/xiaozhu456/pojun-hostfix/releases) 下载
+ `pojun-<版本>-linux-<架构>.zip`（附 SHA256SUMS），解压后：
+ 
+ ```bash
+diff --git a/build.sh b/build.sh
+index 79d0fa9..58ebbed 100755
+--- a/build.sh
++++ b/build.sh
+@@ -191,6 +191,7 @@ package_binary() {
+   cp -R skills "$package_root/"
+   cp config.example.json "$package_root/"
+   if [ -f README.md ]; then cp README.md "$package_root/"; fi
++  if [ -f LICENSE ]; then cp LICENSE "$package_root/"; fi
+   (cd "$POJUN_PACKAGE_DIR" && zip -q -r -9 "$(basename "$archive")" "$(basename "$package_root")")
+   rm -rf "$package_root"
+   ok "Release 压缩包：$archive"
+@@ -226,7 +227,7 @@ build_target() {
+   go build \
+     -tags embedui \
+     -trimpath \
+-    -ldflags "-s -w -buildid= -X main.version=${POJUN_BUILD_VERSION}" \
++    -ldflags "-s -w -buildid= -X main.version=${POJUN_BUILD_VERSION} -X github.com/chu0119/pojun/selfupdate.Repo=xiaozhu456/pojun-hostfix" \
+     -o "$output" \
+     ./cmd/pojun
+ 
+@@ -244,7 +245,7 @@ build_target() {
+     GOARCH="$goarch" \
+     go build \
+       -trimpath \
+-      -ldflags "-s -w -buildid= -X main.version=${POJUN_BUILD_VERSION}" \
++      -ldflags "-s -w -buildid= -X main.version=${POJUN_BUILD_VERSION} -X github.com/chu0119/pojun/selfupdate.Repo=xiaozhu456/pojun-hostfix" \
+       -o "$hostd_output" \
+       ./cmd/pojun-hostd
+     compress_binary "$hostd_output" "$goos"
+@@ -258,7 +259,7 @@ build_target() {
+     GOARCH="$goarch" \
+     go build \
+       -trimpath \
+-      -ldflags "-s -w -buildid= -X main.version=${POJUN_BUILD_VERSION}" \
++      -ldflags "-s -w -buildid= -X main.version=${POJUN_BUILD_VERSION} -X github.com/chu0119/pojun/selfupdate.Repo=xiaozhu456/pojun-hostfix" \
+       -o "$maint_output" \
+       ./cmd/pojun-maint
+     compress_binary "$maint_output" "$goos"
+diff --git a/hostd/raw_elf_test.go b/hostd/raw_elf_test.go
+new file mode 100644
+index 0000000..daf8162
+--- /dev/null
++++ b/hostd/raw_elf_test.go
+@@ -0,0 +1,91 @@
++package hostd
++
++import (
++	"archive/tar"
++	"bytes"
++	"compress/gzip"
++	"encoding/binary"
++	"strings"
++	"testing"
++
++	"github.com/chu0119/pojun/hosttools"
++)
++
++func TestTarWithMissingBinaryIsRejected(t *testing.T) {
++	var blob bytes.Buffer
++	gz := gzip.NewWriter(&blob)
++	tw := tar.NewWriter(gz)
++	if err := tw.WriteHeader(&tar.Header{Name: "LICENSE", Mode: 0o644, Size: 4}); err != nil {
++		t.Fatal(err)
++	}
++	if _, err := tw.Write([]byte("test")); err != nil {
++		t.Fatal(err)
++	}
++	if err := tw.Close(); err != nil {
++		t.Fatal(err)
++	}
++	if err := gz.Close(); err != nil {
++		t.Fatal(err)
++	}
++	tool, _ := hosttools.Lookup("ligolo-ng")
++	if tool.BinInZip != "proxy" {
++		t.Fatal("Ligolo archive member mapping is wrong")
++	}
++	if _, err := installFromArchive(&Job{}, blob.Bytes(), tool); err == nil || !strings.Contains(err.Error(), "找不到二进制") {
++		t.Fatalf("tar should be rejected before installation: %v", err)
++	}
++}
++
++func elfFixture(machine uint16) []byte {
++	b := make([]byte, 120)
++	copy(b, []byte{0x7f, 'E', 'L', 'F', 2, 1, 1})
++	binary.LittleEndian.PutUint16(b[16:], 2)
++	binary.LittleEndian.PutUint16(b[18:], machine)
++	binary.LittleEndian.PutUint32(b[20:], 1)
++	binary.LittleEndian.PutUint64(b[32:], 64)
++	binary.LittleEndian.PutUint16(b[52:], 64)
++	binary.LittleEndian.PutUint16(b[54:], 56)
++	binary.LittleEndian.PutUint16(b[56:], 1)
++	binary.LittleEndian.PutUint32(b[64:], 1)
++	binary.LittleEndian.PutUint64(b[96:], 120)
++	return b
++}
++
++func TestValidateBareELFArchitectureAndContent(t *testing.T) {
++	if err := validateRawELF(elfFixture(62), "amd64"); err != nil {
++		t.Fatal(err)
++	}
++	if err := validateRawELF(elfFixture(183), "amd64"); err == nil {
++		t.Fatal("wrong architecture accepted")
++	}
++	if err := validateRawELF([]byte("<html>download error</html>"), "amd64"); err == nil {
++		t.Fatal("HTML accepted")
++	}
++	if err := validateRawELF(elfFixture(62)[:70], "amd64"); err == nil {
++		t.Fatal("truncated ELF accepted")
++	}
++	for _, id := range []string{"pspy64", "linpeas"} {
++		tool, ok := hosttools.Lookup(id)
++		if !ok || !tool.RawBinary {
++			t.Fatalf("raw tool not declared: %s", id)
++		}
++	}
++	tool, _ := hosttools.Lookup("nuclei")
++	if tool.RawBinary {
++		t.Fatal("archive tool must not accept bare downloads")
++	}
++}
++
++func TestLibraryInstallUsesConfiguredVenv(t *testing.T) {
++	t.Setenv("POJUN_TOOL_PYTHON", "/opt/pojun-tools/python/bin/python3")
++	tool, _ := hosttools.Lookup("pika")
++	args := pipArgv(tool, "")
++	if args[0] != "/opt/pojun-tools/python/bin/python3" {
++		t.Fatal(args)
++	}
++	for _, a := range args {
++		if a == "--break-system-packages" {
++			t.Fatal("managed venv must not override system-package protections")
++		}
++	}
++}
+diff --git a/hostd/recipe.go b/hostd/recipe.go
+index 2d0dadb..b750b63 100644
+--- a/hostd/recipe.go
++++ b/hostd/recipe.go
+@@ -146,7 +146,10 @@ func pipArgv(tool hosttools.Tool, proxy string) []string {
+ 			return append(argv, pkgs...)
+ 		}
+ 	}
+-	argv := []string{"python3", "-m", "pip", "install", "--break-system-packages"}
++	argv := []string{hosttools.PythonExecutable(), "-m", "pip", "install"}
++	if os.Getenv("POJUN_TOOL_PYTHON") == "" {
++		argv = append(argv, "--break-system-packages")
++	}
+ 	if proxy != "" {
+ 		argv = append(argv, "--proxy", proxy)
+ 	}
+diff --git a/hostd/server.go b/hostd/server.go
+index 21cf46a..ff55b00 100644
+--- a/hostd/server.go
++++ b/hostd/server.go
+@@ -7,6 +7,7 @@ import (
+ 	"compress/gzip"
+ 	"context"
+ 	"crypto/rand"
++	"debug/elf"
+ 	"encoding/hex"
+ 	"encoding/json"
+ 	"fmt"
+@@ -47,15 +48,15 @@ const (
+ 
+ // Job 一次安装任务。
+ type Job struct {
+-	ID       string    `json:"id"`
+-	ToolID   string    `json:"tool_id"`
+-	ToolName string    `json:"tool_name"`
+-	State    State     `json:"state"`
+-	ExitCode int       `json:"exit_code"`
+-	Err      string    `json:"error,omitempty"`
+-	StartedAt  time.Time `json:"started_at"`
+-	EndedAt    time.Time `json:"ended_at,omitempty"`
+-	Log      string    `json:"log"`
++	ID        string    `json:"id"`
++	ToolID    string    `json:"tool_id"`
++	ToolName  string    `json:"tool_name"`
++	State     State     `json:"state"`
++	ExitCode  int       `json:"exit_code"`
++	Err       string    `json:"error,omitempty"`
++	StartedAt time.Time `json:"started_at"`
++	EndedAt   time.Time `json:"ended_at,omitempty"`
++	Log       string    `json:"log"`
+ 
+ 	mu     sync.Mutex
+ 	buf    bytes.Buffer
+@@ -174,6 +175,7 @@ func (s *Server) Start(parent context.Context, toolID, proxy string) (*Job, erro
+ 		}
+ 		j.setState(StateRunning)
+ 		code, err := s.run(ctx, j, tool, cleanProxy)
++		hosttools.InvalidateInventory()
+ 		j.mu.Lock()
+ 		j.ExitCode = code
+ 		j.EndedAt = time.Now()
+@@ -329,6 +331,12 @@ func (s *Server) runGitHub(ctx context.Context, j *Job, tool hosttools.Tool, pro
+ // installFromArchive 从归档里取出目标二进制装到 /usr/local/bin。
+ // 支持 zip / tar(.gz) / 单文件 gz 三种形态。
+ func installFromArchive(j *Job, blob []byte, tool hosttools.Tool) (int, error) {
++	if tool.RawBinary {
++		if err := validateRawELF(blob, hosttools.Arch()); err != nil {
++			return 1, err
++		}
++		return installBinary(j, tool, blob)
++	}
+ 	want := tool.BinInZip
+ 	if want == "" {
+ 		want = tool.Bin
+@@ -354,11 +362,13 @@ func installFromArchive(j *Job, blob []byte, tool hosttools.Tool) (int, error) {
+ 			return 1, err
+ 		}
+ 		// 可能是 tar.gz（多个条目），也可能是单文件 gz（内部就是那个二进制）。
+-		// 用「能否在 tar 流里找到目标文件」区分：找到就装 tar 里的那个，
+-		// 找不到就把解压结果整体当成那个二进制。
++		// tar 内缺少目标文件必须报错，不能把整个 tar 误装成可执行文件。
+ 		if data, ok := findInTar(raw, tool); ok {
+ 			return installBinary(j, tool, data)
+ 		}
++		if _, err := tar.NewReader(bytes.NewReader(raw)).Next(); err == nil {
++			return 1, fmt.Errorf("压缩包里找不到二进制 %q", want)
++		}
+ 		return installBinary(j, tool, raw)
+ 	}
+ 	// 纯 tar
+@@ -368,6 +378,31 @@ func installFromArchive(j *Job, blob []byte, tool hosttools.Tool) (int, error) {
+ 	return 1, fmt.Errorf("无法识别的归档格式")
+ }
+ 
++// Bare downloads are accepted only for explicitly allowlisted catalog entries.
++// Validate the executable format and target architecture before installing.
++func validateRawELF(blob []byte, arch string) error {
++	f, err := elf.NewFile(bytes.NewReader(blob))
++	if err != nil {
++		return fmt.Errorf("裸二进制不是有效 ELF: %w", err)
++	}
++	defer f.Close()
++	want := elf.EM_X86_64
++	if arch == "arm64" {
++		want = elf.EM_AARCH64
++	} else if arch != "amd64" {
++		return fmt.Errorf("不支持裸二进制架构 %q", arch)
++	}
++	if f.Class != elf.ELFCLASS64 || f.Data != elf.ELFDATA2LSB || f.Machine != want || (f.Type != elf.ET_EXEC && f.Type != elf.ET_DYN) {
++		return fmt.Errorf("ELF 格式或架构不匹配: %s/%s/%s", f.Class, f.Machine, f.Type)
++	}
++	for _, p := range f.Progs {
++		if p.Type == elf.PT_LOAD && p.Filesz > 0 && p.Off <= uint64(len(blob)) && p.Filesz <= uint64(len(blob))-p.Off {
++			return nil
++		}
++	}
++	return fmt.Errorf("ELF 缺少有效加载段")
++}
++
+ // findInTar 在 tar（tar.gz 解压后）里找目标二进制的内容。
+ // 找不到返回 ok=false——调用方据此回退到「整个文件就是那个二进制」。
+ func findInTar(blob []byte, tool hosttools.Tool) ([]byte, bool) {
+diff --git a/hosttools/hosttools.go b/hosttools/hosttools.go
+index 74acbf2..1b431f4 100644
+--- a/hosttools/hosttools.go
++++ b/hosttools/hosttools.go
+@@ -14,7 +14,6 @@
+ package hosttools
+ 
+ import (
+-	"os/exec"
+ 	"runtime"
+ 	"strconv"
+ 	"strings"
+@@ -137,6 +136,7 @@ type Tool struct {
+ 	// 现有那些有 CLI 的（wafw00f/netexec/semgrep/pwntools）继续走 pipx：
+ 	// 隔离环境不会污染系统 Python，正是我们想要的。
+ 	PipLibrary bool `json:"-"`
++	RawBinary  bool `json:"-"`
+ }
+ 
+ // catalog 常用渗透工具目录。安装方式优先选「自包含」的:能用 GitHub Release
+@@ -145,7 +145,7 @@ var catalog = []Tool{
+ 	{Name: "nmap", Purpose: "端口扫描/服务指纹", Kind: KindApt, Category: CatNetwork, Apt: "nmap", Dnf: "nmap"},
+ 	{Name: "masscan", Purpose: "大规模端口快扫", Kind: KindApt, Category: CatNetwork, Apt: "masscan", Dnf: "masscan"},
+ 	{Name: "sqlmap", Purpose: "SQL 注入检测与利用", Kind: KindApt, Category: CatWeb, Apt: "sqlmap", Dnf: "sqlmap"},
+-	{Name: "imagemagick", Purpose: "证据图片处理：拼图/水印/脱敏（报告照片证据必需）", Kind: KindApt, Category: CatRuntime, Apt: "imagemagick", Dnf: "ImageMagick"},
++	{ID: "imagemagick", Name: "imagemagick", Bin: "magick", Purpose: "证据图片处理：拼图/水印/脱敏（报告照片证据必需）", Kind: KindApt, Category: CatRuntime, Apt: "imagemagick", Dnf: "ImageMagick"},
+ 	{Name: "libreoffice", Purpose: "文档证据预览：Word/Excel/PPT→PDF（附件缩略图与报告预览）", Kind: KindApt, Category: CatRuntime, Apt: "libreoffice-writer libreoffice-calc libreoffice-impress", Dnf: "libreoffice-writer libreoffice-calc libreoffice-impress"},
+ 	{Name: "poppler", Bin: "pdftoppm", Purpose: "PDF 转图片（文档证据预览必需）", Kind: KindApt, Category: CatRuntime, Apt: "poppler-utils", Dnf: "poppler-utils"},
+ 	{Name: "ffuf", Purpose: "目录/参数模糊枚举", Kind: KindApt, Category: CatWeb, Apt: "ffuf", Dnf: "ffuf"},
+@@ -165,7 +165,7 @@ var catalog = []Tool{
+ 	// nodejs 连 npx 一起装：MCP 里用 `npx @playwright/mcp` 启动 browser 服务器，
+ 	// 机器上没有 node 时那个 MCP 永远连不上（实测每次 worker 启动都报
+ 	// "npx: executable file not found in $PATH"）。
+-	{Name: "nodejs", Bin: "node", Purpose: "Node 运行时(npx 随装,供 MCP 服务器用)", Kind: KindApt, Category: CatRuntime, Apt: "nodejs", Dnf: "nodejs"},
++	{Name: "nodejs", Bin: "node", Purpose: "Node 运行时(npx 随装,供 MCP 服务器用)", Kind: KindApt, Category: CatRuntime, Apt: "nodejs npm", Dnf: "nodejs npm"},
+ 
+ 	{Name: "nuclei", Purpose: "基于模板的漏洞扫描(漏洞情报联动)", Kind: KindGitHub, Category: CatWeb,
+ 		Repo: "projectdiscovery/nuclei", AssetTmpl: "nuclei_{ver}_linux_{arch}.zip"},
+@@ -188,7 +188,7 @@ var catalog = []Tool{
+ 	{Name: "wafw00f", Purpose: "WAF 识别", Kind: KindPip, Category: CatWeb, Pip: "wafw00f"},
+ 	// impacket 是 SMB/NTLM/票据的 Python 库(提供 msmfmap、ntlmrelay、secretsdump
+ 	// 等脚本)。apt 源里的包名是 python3-impacket,Debian/Ubuntu 都有。
+-	{Name: "impacket", Purpose: "SMB/NTLM 协议工具集(secretsdump/ntlmrelay 等)", Kind: KindApt, Category: CatCred,
++	{ID: "impacket", Name: "impacket", Bin: "impacket-wmiexec", Purpose: "SMB/NTLM 协议工具集(secretsdump/ntlmrelay 等)", Kind: KindApt, Category: CatCred,
+ 		Apt: "python3-impacket", Dnf: "python3-impacket"},
+ 	// SecLists 是最大的通用字典集(目录爆破/参数 fuzz 的语料)。apt 源里没有
+ 	// 稳定包名,只能从 GitHub 克隆——但它是目录而非单文件,GitHub 配方装不了,
+@@ -232,7 +232,7 @@ var catalog = []Tool{
+ 	// 资产名 2026-10-30 实测：ligolo-ng_proxy_<ver>_linux_amd64.tar.gz（官方
+ 	// 仓库是 nicocha30/ligolo-ng——猜 fork 名会 404）。
+ 	{Name: "ligolo-ng", Purpose: "TUN 反向代理(内网直达/双 bind)", Kind: KindGitHub, Category: CatPivot,
+-		Repo: "nicocha30/ligolo-ng", AssetTmpl: "ligolo-ng_proxy_{ver}_linux_{arch}.tar.gz"},
++		Repo: "nicocha30/ligolo-ng", AssetTmpl: "ligolo-ng_proxy_{ver}_linux_{arch}.tar.gz", BinInZip: "proxy"},
+ 	// responder：LLMNR/NBT-NS 毒化（Windows 内网凭据捕获）。GitHub 无 release，
+ 	// Kali/Debian 有 apt 包（上游源码形态是目录，GitHub 配方装不了）。
+ 	{Name: "responder", Purpose: "LLMNR/NBT-NS 毒化(内网凭据捕获)", Kind: KindApt, Category: CatCred,
+@@ -243,11 +243,11 @@ var catalog = []Tool{
+ 	// pspy：无特权进程监视（发现 cron/服务类权限保持点）。资产名固定
+ 	// pspy64/pspy32（2026-10-30 实测，无版本号、repo 已归档=最后版本不变）。
+ 	{Name: "pspy", Bin: "pspy64", Purpose: "无特权进程监视(发现权限保持点)", Kind: KindGitHub, Category: CatExploit,
+-		Repo: "DominicBreuker/pspy", AssetTmpl: "pspy64"},
++		Repo: "DominicBreuker/pspy", AssetTmpl: "pspy64", RawBinary: true},
+ 	// linpeas：Linux 提权枚举（后渗透第一脚本的行业标准）。资产实测
+ 	// linpeas_linux_amd64（无扩展名，arch 模板对齐）。
+ 	{Name: "linpeas", Bin: "linpeas", Purpose: "Linux 提权枚举(PEASS 系列)", Kind: KindGitHub, Category: CatExploit,
+-		Repo: "peass-ng/PEASS-ng", AssetTmpl: "linpeas_linux_{arch}"},
++		Repo: "peass-ng/PEASS-ng", AssetTmpl: "linpeas_linux_{arch}", RawBinary: true},
+ 	// sshuttle：SSH 翻越（把远端网段拉进本机路由表）。
+ 	{Name: "sshuttle", Purpose: "SSH 隧道直连远端网段(路由级 pivot)", Kind: KindApt, Category: CatPivot,
+ 		Apt: "sshuttle", Dnf: "sshuttle"},
+@@ -260,12 +260,12 @@ var catalog = []Tool{
+ 		Repo: "projectdiscovery/interactsh", AssetTmpl: "interactsh-client_{ver}_linux_{arch}.zip"},
+ 	// netexec：SMB/Windows 协议横移（CrackMapExec 的现代替代）。
+ 	// 只在 PyPI 发版，没有 GitHub Release，所以走 pip 配方。
+-	{Name: "netexec", Bin: "netexec", Purpose: "SMB/WinRM 横移与凭据喷洒(现代版 CrackMapExec)", Kind: KindPip, Category: CatCred,
+-		Pip: "netexec"},
++	{ID: "netexec", Name: "netexec", Bin: "nxc", Purpose: "SMB/WinRM 横移与凭据喷洒(现代版 CrackMapExec)", Kind: KindPip, Category: CatCred,
++		Pip: "git+https://github.com/Pennyw0rth/NetExec.git@f08f65a4596fdf4a4e98c958e292accf31801422"},
+ 	// semgrep：SAST 规则扫描（对下载到的源码做规则匹配）。
+ 	{Name: "semgrep", Purpose: "源码静态规则扫描(SAST)", Kind: KindPip, Category: CatCode, Pip: "semgrep"},
+ 	// pwntools：漏洞利用脚本框架（agent 写 exploit 时用）。
+-	{Name: "pwntools", Bin: "pwntools", Purpose: "漏洞利用脚本框架(写 exploit 用)", Kind: KindPip, Category: CatExploit, Pip: "pwntools"},
++	{ID: "pwntools", Name: "pwntools", Bin: "pwn", Purpose: "漏洞利用脚本框架(写 exploit 用)", Kind: KindPip, Category: CatExploit, Pip: "pwntools"},
+ 
+ 	// ── 中间件协议专项 (2026-10-22 调研新增) ──────────────────────────
+ 	//
+@@ -316,7 +316,9 @@ func normalize(t Tool) Tool {
+ 	if t.Bin == "" {
+ 		t.Bin = t.Name
+ 	}
+-	t.ID = t.Bin
++	if t.ID == "" {
++		t.ID = t.Bin
++	}
+ 	if t.BinInZip == "" {
+ 		t.BinInZip = t.Bin
+ 	}
+@@ -363,8 +365,7 @@ func Lookup(id string) (Tool, bool) {
+ 
+ // AvailableInPath 该工具当前是否已在 PATH 内。
+ func (t Tool) AvailableInPath() bool {
+-	_, err := exec.LookPath(t.Bin)
+-	return err == nil
++	return toolAvailable(t)
+ }
+ 
+ // Inventory 探测全部目录项(顺序与 catalog 一致)。
+@@ -373,7 +374,7 @@ func Inventory() []Tool {
+ 	for i, t := range catalog {
+ 		n := normalize(t)
+ 		n.Available = false
+-		if _, err := exec.LookPath(n.Bin); err == nil {
++		if toolAvailable(n) {
+ 			n.Available = true
+ 			n.Install = ""
+ 		} else {
+@@ -393,13 +394,16 @@ func Inventory() []Tool {
+ // feroxbuster…）根本判断不出该在什么场景调哪一个，只能瞎试或者干脆不用。
+ // 带上用途后"派意图选手段以家底为准"才真正成立。
+ func Summary() map[string]any {
+-	inv := Inventory()
++	return summarize(Inventory())
++}
++
++func summarize(inv []Tool) map[string]any {
+ 	avail := make([]string, 0, len(inv))
+ 	missing := make([]string, 0, len(inv))
+ 	for _, t := range inv {
+ 		if t.Available {
+ 			if t.Purpose != "" {
+-				avail = append(avail, t.Bin+": "+t.Purpose)
++				avail = append(avail, displayTool(t)+": "+compactPurpose(t.Purpose))
+ 			} else {
+ 				avail = append(avail, t.Bin)
+ 			}
+@@ -412,7 +416,7 @@ func Summary() map[string]any {
+ 	return map[string]any{
+ 		"available": avail,
+ 		"missing":   missing,
+-		"hint":      "available 是本机 PATH 里可直接经 Bash 调用的工具，格式为「命令名: 用途」——派意图选手段时按用途挑，别只认得名字；missing 是本机没有的工具，不要臆测它们的存在。需要缺失工具时在意图/小结里向用户提示安装命令，不要自行安装。",
++		"hint":      "available 按用途列出已验证的命令、Python库和字典；命令通过 Bash 调用，Python库通过 import 使用，字典读取所示目录。missing 未安装；不要自行安装。",
+ 	}
+ }
+ 
+@@ -426,26 +430,28 @@ func Summary() map[string]any {
+ // 曾经这个函数定义了却没有调用方：工具清单只进了 planner 的唤醒提示，
+ // 而真正动手的 worker 看不到它——于是新装的一批工具一次都没被用起来。
+ func SummaryText() string {
++	return formatSummaryText(Inventory())
++}
++
++func formatSummaryText(inv []Tool) string {
+ 	var b strings.Builder
+ 	avail := 0
+-	for _, t := range Inventory() {
++	for _, t := range inv {
+ 		if !t.Available {
+ 			continue
+ 		}
+ 		avail++
+ 		if t.Purpose != "" {
+-			b.WriteString("✓ " + t.Bin + " —— " + t.Purpose + "\n")
++			b.WriteString("✓ " + displayTool(t) + " —— " + compactPurpose(t.Purpose) + "\n")
+ 		} else {
+-			b.WriteString("✓ " + t.Bin + "\n")
++			b.WriteString("✓ " + displayTool(t) + "\n")
+ 		}
+ 	}
+ 	if avail == 0 {
+ 		return ""
+ 	}
+-	return "可用工具 " + strconv.Itoa(avail) + " 个（都是本机 PATH 里可直接经 Bash 调用的命令）：\n" + b.String() +
+-		"\n动手前先想一下这些工具能不能直接解决问题——别用 python3 从头造轮子，" +
+-		"也别因为不认得某个工具的名字就忽略它。确实需要本机没有的工具时，" +
+-		"在意图/小结里写清楚要装什么，不要自行安装。"
++	return "可用工具 " + strconv.Itoa(avail) + " 个（命令用 Bash，Python库用 import，字典读目录）：\n" + b.String() +
++		"\n优先使用现有工具；缺失工具向用户提出，不自行安装。"
+ }
+ 
+ // Arch 归一化为 Release 资产里用的架构名。
+diff --git a/hosttools/hosttools_test.go b/hosttools/hosttools_test.go
+index 6b73909..c2fa3d8 100644
+--- a/hosttools/hosttools_test.go
++++ b/hosttools/hosttools_test.go
+@@ -66,6 +66,7 @@ func TestSummaryShape(t *testing.T) {
+ func TestSummaryTextMarksAvailability(t *testing.T) {
+ 	// 用一个临时 PATH 只含空目录,让全部工具缺失(不依赖环境)
+ 	dir := t.TempDir()
++	t.Setenv("POJUN_SECLISTS_DIR", filepath.Join(dir, "missing-seclists"))
+ 	t.Setenv("PATH", dir)
+ 	txt := SummaryText()
+ 	// 空 PATH 下没有任何可用工具，SummaryText 返回空串
+diff --git a/hosttools/probe.go b/hosttools/probe.go
+new file mode 100644
+index 0000000..04f2716
+--- /dev/null
++++ b/hosttools/probe.go
+@@ -0,0 +1,136 @@
++package hosttools
++
++import (
++	"context"
++	"encoding/json"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"strings"
++	"sync"
++	"time"
++	"unicode/utf8"
++)
++
++var pythonModules = map[string]string{
++	"gmqtt": "gmqtt", "paho-mqtt": "paho.mqtt.client", "pika": "pika",
++	"amqpstorm": "amqpstorm", "confluent-kafka": "confluent_kafka", "kombu": "kombu",
++	"pymongo": "pymongo", "pymysql": "pymysql", "psycopg2-binary": "psycopg2",
++	"redis": "redis", "zeep": "zeep", "python-gitlab": "gitlab", "netmiko": "netmiko",
++	"napalm": "napalm", "splunk-sdk": "splunklib", "impacket": "impacket",
++}
++
++// PythonExecutable is shared by inventory and the library installer so they
++// inspect the same environment. An explicit path supports a managed venv.
++func PythonExecutable() string {
++	if p := strings.TrimSpace(os.Getenv("POJUN_TOOL_PYTHON")); p != "" {
++		return p
++	}
++	return "python3"
++}
++
++var moduleCache struct {
++	sync.Mutex
++	key    string
++	at     time.Time
++	values map[string]bool
++}
++
++func InvalidateInventory() {
++	moduleCache.Lock()
++	moduleCache.at = time.Time{}
++	moduleCache.Unlock()
++}
++
++func moduleAvailable(module string) bool {
++	python := PythonExecutable()
++	key := python + "\x00" + os.Getenv("PATH") + "\x00" + os.Getenv("PYTHONPATH")
++	moduleCache.Lock()
++	defer moduleCache.Unlock()
++	if moduleCache.key == key && time.Since(moduleCache.at) < 10*time.Second {
++		return moduleCache.values[module]
++	}
++	modules := make([]string, 0, len(pythonModules))
++	for _, name := range pythonModules {
++		modules = append(modules, name)
++	}
++	args, _ := json.Marshal(modules)
++	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
++	defer cancel()
++	cmd := exec.CommandContext(ctx, python, "-c", `import contextlib,importlib,io,json,sys
++result={}
++for name in json.loads(sys.argv[1]):
++    try:
++        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
++            importlib.import_module(name)
++        result[name]=True
++    except Exception:
++        result[name]=False
++print(json.dumps(result))`, string(args))
++	values := map[string]bool{}
++	if data, err := cmd.Output(); err == nil {
++		_ = json.Unmarshal(data, &values)
++	}
++	moduleCache.key, moduleCache.at, moduleCache.values = key, time.Now(), values
++	return values[module]
++}
++
++func toolAvailable(t Tool) bool {
++	if t.PipLibrary {
++		return moduleAvailable(pythonModules[t.ID])
++	}
++	if t.ID == "seclists" {
++		roots := []string{"/opt/SecLists", "/usr/share/seclists"}
++		if custom := strings.TrimSpace(os.Getenv("POJUN_SECLISTS_DIR")); custom != "" {
++			roots = []string{custom}
++		}
++		for _, root := range roots {
++			if st, err := os.Stat(filepath.Join(root, "Discovery", "Web-Content", "common.txt")); err == nil && st.Mode().IsRegular() {
++				return true
++			}
++		}
++		return false
++	}
++	if t.ID == "impacket" {
++		return commandAvailable(t.Bin) && moduleAvailable("impacket")
++	}
++	if t.ID == "imagemagick" {
++		return commandAvailable("magick") || commandAvailable("convert")
++	}
++	if t.ID == "node" {
++		return commandAvailable("node") && commandAvailable("npm") && commandAvailable("npx")
++	}
++	return commandAvailable(t.Bin)
++}
++
++func commandAvailable(name string) bool {
++	_, err := exec.LookPath(name)
++	return err == nil
++}
++
++func displayTool(t Tool) string {
++	if t.PipLibrary {
++		return "Python库 " + pythonModules[t.ID]
++	}
++	if t.ID == "seclists" {
++		return "SecLists 字典 /opt/SecLists"
++	}
++	return t.Bin
++}
++
++// Keep all catalog entries useful in prompts without exceeding the existing
++// 4 KB tool-list budget. Full descriptions remain unchanged in the UI/API.
++func compactPurpose(s string) string {
++	if i := strings.IndexAny(s, "(（"); i >= 0 {
++		s = s[:i]
++	}
++	s = strings.TrimSpace(s)
++	if len(s) <= 24 {
++		return s
++	}
++	n := 21
++	for n > 0 && !utf8.ValidString(s[:n]) {
++		n--
++	}
++	return s[:n] + "…"
++}
+diff --git a/hosttools/probe_test.go b/hosttools/probe_test.go
+new file mode 100644
+index 0000000..f1dcc74
+--- /dev/null
++++ b/hosttools/probe_test.go
+@@ -0,0 +1,83 @@
++package hosttools
++
++import (
++	"encoding/json"
++	"os"
++	"path/filepath"
++	"runtime"
++	"strings"
++	"testing"
++)
++
++func TestFullCatalogRemainsCompactAndComplete(t *testing.T) {
++	items := Catalog()
++	for i := range items {
++		items[i].Available = true
++	}
++	text := formatSummaryText(items)
++	data, _ := json.Marshal(summarize(items))
++	if len(text) > 4000 || len(data) > 4000 {
++		t.Fatalf("full inventory too large: text=%d json=%d", len(text), len(data))
++	}
++	for _, item := range items {
++		if !strings.Contains(text, displayTool(item)) {
++			t.Errorf("missing %s", item.ID)
++		}
++	}
++}
++
++func TestStableIDsAndRealCommands(t *testing.T) {
++	for id, bin := range map[string]string{"imagemagick": "magick", "impacket": "impacket-wmiexec", "pwntools": "pwn", "netexec": "nxc"} {
++		tool, ok := Lookup(id)
++		if !ok || tool.ID != id || tool.Bin != bin {
++			t.Fatalf("%s: %+v", id, tool)
++		}
++	}
++	for _, tool := range Catalog() {
++		if tool.PipLibrary && pythonModules[tool.ID] == "" {
++			t.Errorf("missing import mapping: %s", tool.ID)
++		}
++	}
++}
++
++func TestLibraryChecksImportInsteadOfCommand(t *testing.T) {
++	if runtime.GOOS == "windows" {
++		t.Skip("POSIX executable fixture")
++	}
++	dir := t.TempDir()
++	python := filepath.Join(dir, "python3")
++	if err := os.WriteFile(python, []byte("#!/bin/sh\nprintf '%s\\n' '{\"pika\":true,\"psycopg2\":false}'\n"), 0o755); err != nil {
++		t.Fatal(err)
++	}
++	t.Setenv("PATH", dir)
++	t.Setenv("POJUN_TOOL_PYTHON", python)
++	InvalidateInventory()
++	defer InvalidateInventory()
++	pika, _ := Lookup("pika")
++	psycopg, _ := Lookup("psycopg2-binary")
++	if !pika.AvailableInPath() {
++		t.Fatal("importable library without CLI must be available")
++	}
++	if psycopg.AvailableInPath() {
++		t.Fatal("failed import must remain unavailable")
++	}
++}
++
++func TestSecListsChecksDataInsteadOfExecutable(t *testing.T) {
++	dir := t.TempDir()
++	t.Setenv("POJUN_SECLISTS_DIR", dir)
++	tool, _ := Lookup("seclists")
++	if tool.AvailableInPath() {
++		t.Fatal("empty directory must not be available")
++	}
++	file := filepath.Join(dir, "Discovery", "Web-Content", "common.txt")
++	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.WriteFile(file, []byte("admin\n"), 0o644); err != nil {
++		t.Fatal(err)
++	}
++	if !tool.AvailableInPath() {
++		t.Fatal("dictionary data without CLI must be available")
++	}
++}
+diff --git a/install.sh b/install.sh
+index 885c5e1..131d492 100755
+--- a/install.sh
++++ b/install.sh
+@@ -16,7 +16,7 @@
+ #       Docker   cd /opt/pojun && docker compose down -v && rm -rf /opt/pojun
+ set -euo pipefail
+ 
+-REPO="chu0119/Pojun"
++REPO="xiaozhu456/pojun-hostfix"
+ INSTALL_DIR="/opt/pojun"
+ SERVICE="pojun"
+ RUN_USER="pojun"
+@@ -347,6 +347,8 @@ choose_mode(){
+ }
+ 
+ choose_mode
++[ "$MODE" = "binary" ] || die "宿主工具修复通道目前仅提供二进制部署，不提供 Docker 修复镜像"
++[ "$PKG_ARCH" = "linux-amd64" ] || die "宿主工具修复通道目前仅发布 Linux amd64"
+ ok "部署形态: $MODE  目标目录: $INSTALL_DIR"
+ 
+ # ── 解析版本 ─────────────────────────────────────
+diff --git a/selfupdate/github.go b/selfupdate/github.go
+index 332dca2..53907fe 100644
+--- a/selfupdate/github.go
++++ b/selfupdate/github.go
+@@ -17,11 +17,13 @@ import (
+ // 一条远程代码执行通道，对一个渗透测试平台来说这个口子开不得。二开/镜像要在构建时
+ // 用 `-ldflags "-X github.com/chu0119/pojun/selfupdate.Repo=owner/name"` 覆盖，
+ // 这样改的是产物本身，不是运行期可篡改的开关。
+-var Repo = "chu0119/pojun"
++var Repo = "xiaozhu456/pojun-hostfix"
+ 
+ func latestURL() string { return "https://api.github.com/repos/" + Repo + "/releases/latest" }
+ 
+-func tagURL(tag string) string { return "https://api.github.com/repos/" + Repo + "/releases/tags/" + tag }
++func tagURL(tag string) string {
++	return "https://api.github.com/repos/" + Repo + "/releases/tags/" + tag
++}
+ 
+ // allowedHosts 限定升级链路能访问的域名。配合下面的 checkRedirect，
+ // 任何一跳被重定向到名单外的主机都会直接失败——这是防止 DNS 污染 / 中间人
+diff --git a/selfupdate/hostfix_test.go b/selfupdate/hostfix_test.go
+new file mode 100644
+index 0000000..43a2972
+--- /dev/null
++++ b/selfupdate/hostfix_test.go
+@@ -0,0 +1,69 @@
++package selfupdate
++
++import (
++	"context"
++	"io"
++	"net/http"
++	"strings"
++	"testing"
++)
++
++func TestHostfixVersionOrderingAndValidation(t *testing.T) {
++	ordered := []string{"0.4.38-hostfix.99", "0.4.39", "v0.4.39-hostfix.1", "0.4.39-hostfix.2", "0.4.39-hostfix.10", "0.4.40", "0.5.0-hostfix.1"}
++	for i, a := range ordered {
++		if !ValidVersionTag(a) {
++			t.Fatalf("published version rejected: %q", a)
++		}
++		for j, b := range ordered {
++			want := 0
++			if i < j {
++				want = -1
++			} else if i > j {
++				want = 1
++			}
++			if got, ok := CompareVersions(a, b); !ok || got != want {
++				t.Fatalf("CompareVersions(%q,%q)=%d,%v want %d", a, b, got, ok, want)
++			}
++		}
++	}
++	for _, v := range []string{"0.4.39-hostfix.0", "0.4.39-hostfix.01", "0.4.39-hostfix.-1", "0.4.39-hostfix.1/../../x", "0.4.39-hostfix.1\n", "0.4.39+hostfix.1", "0.4.39-dirty", "0.4.39-hostfix.9999999999999999999999999999"} {
++		if _, ok := CompareVersions(v, "0.4.39"); ok && !strings.HasSuffix(v, "\n") {
++			t.Errorf("invalid version comparable: %q", v)
++		}
++		if ValidVersionTag(v) {
++			t.Errorf("unsafe tag accepted: %q", v)
++		}
++	}
++	if got := AssetName("v0.4.39-hostfix.2", "linux", "amd64"); got != "pojun-0.4.39-hostfix.2-linux-amd64.zip" {
++		t.Fatal(got)
++	}
++}
++
++type hostfixTransport func(*http.Request) (*http.Response, error)
++
++func (f hostfixTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
++
++func TestHostfixChannelDoesNotFallBackToOfficial(t *testing.T) {
++	if Repo != "xiaozhu456/pojun-hostfix" {
++		t.Fatalf("wrong compiled source: %s", Repo)
++	}
++	var urls []string
++	c := &http.Client{Transport: hostfixTransport(func(r *http.Request) (*http.Response, error) {
++		urls = append(urls, r.URL.String())
++		return &http.Response{StatusCode: 404, Body: io.NopCloser(strings.NewReader(`{}`)), Header: make(http.Header)}, nil
++	})}
++	if _, err := FetchLatest(context.Background(), c); err == nil {
++		t.Fatal("missing channel must fail")
++	}
++	if _, err := FetchByTag(context.Background(), c, "0.4.39-hostfix.2"); err == nil {
++		t.Fatal("missing release must fail")
++	}
++	if len(urls) != 3 {
++		t.Fatalf("unexpected requests: %v", urls)
++	}
++	for _, u := range urls {
++		if !strings.HasPrefix(u, "https://api.github.com/repos/xiaozhu456/pojun-hostfix/releases/") {
++			t.Fatalf("escaped channel: %s", u)
++		}
++	}
++}
+diff --git a/selfupdate/selfupdate.go b/selfupdate/selfupdate.go
+index 0a6c1d5..70850fb 100644
+--- a/selfupdate/selfupdate.go
++++ b/selfupdate/selfupdate.go
+@@ -113,13 +113,20 @@ func cleanStaged(p Paths) {
+ 	_ = os.Remove(p.Sum)
+ }
+ 
+-// versionTagRe 只接受纯净的三段式版本号（可带 v 前缀）。
+-var versionTagRe = regexp.MustCompile(`^v?\d+\.\d+\.\d+$`)
++// Published hostfix versions carry an ordered repair revision. Other suffixes
++// remain development builds and must never enter the automatic update path.
++var versionTagRe = regexp.MustCompile(`^v?([0-9]+)\.([0-9]+)\.([0-9]+)(-hostfix\.([1-9][0-9]*))?$`)
+ 
+ // ValidVersionTag 报告字符串是否是允许的版本号形态。hostd 的 /self-upgrade 用它
+ // 做入参校验——那个参数最终会拼进 GitHub API 的 URL，必须收窄形态。
+ // 刻意**不做 TrimSpace**：带空白的输入直接拒绝，而不是悄悄纠正后再用。
+-func ValidVersionTag(s string) bool { return versionTagRe.MatchString(s) }
++func ValidVersionTag(s string) bool {
++	if !versionTagRe.MatchString(s) {
++		return false
++	}
++	_, ok := parseVersion(s)
++	return ok
++}
+ 
+ // CompareVersions 比较两个版本号，返回 -1/0/1（a<b / a==b / a>b）。
+ // ok=false 表示至少一边不是可比较的版本号（例如本地开发构建的 "dev" 或
+@@ -131,7 +138,7 @@ func CompareVersions(a, b string) (int, bool) {
+ 	if !aok || !bok {
+ 		return 0, false
+ 	}
+-	for i := range 3 {
++	for i := range 4 {
+ 		if av[i] != bv[i] {
+ 			if av[i] < bv[i] {
+ 				return -1, true
+@@ -142,26 +149,24 @@ func CompareVersions(a, b string) (int, bool) {
+ 	return 0, true
+ }
+ 
+-// parseVersion 解析 "v0.3.7" / "0.3.7" 形式的版本号为 [3]int。
+-//
+-// 只接受纯净的三段式：build.sh 在非 tag 构建时用 git describe 产出
+-// "0.3.7-2-gabc1234" 这类带后缀的版本，它们必须被判为不可比较，而不是被当成
+-// 0.3.7 —— 否则开发构建会被误判为"已是最新"或被正式版覆盖。
+-func parseVersion(s string) ([3]int, bool) {
++// Versions in this channel are compared as (major, minor, patch, hostfix).
++// A plain upstream version has revision zero. This is a channel-specific order,
++// not general SemVer prerelease ordering.
++func parseVersion(s string) ([4]int, bool) {
+ 	s = strings.TrimSpace(s)
+-	s = strings.TrimPrefix(s, "v")
+-	if s == "" {
+-		return [3]int{}, false
+-	}
+-	parts := strings.Split(s, ".")
+-	if len(parts) != 3 {
+-		return [3]int{}, false
++	match := versionTagRe.FindStringSubmatch(s)
++	if match == nil {
++		return [4]int{}, false
+ 	}
+-	var out [3]int
++	parts := []string{match[1], match[2], match[3], match[5]}
++	var out [4]int
+ 	for i, p := range parts {
++		if p == "" {
++			continue
++		}
+ 		n, err := strconv.Atoi(p)
+ 		if err != nil || n < 0 {
+-			return [3]int{}, false
++			return [4]int{}, false
+ 		}
+ 		out[i] = n
+ 	}
+diff --git a/server/core_test.go b/server/core_test.go
+index d455ea2..597a8b1 100644
+--- a/server/core_test.go
++++ b/server/core_test.go
+@@ -4,6 +4,7 @@ import (
+ 	"bytes"
+ 	"context"
+ 	"encoding/json"
++	"fmt"
+ 	"net/http"
+ 	"net/http/httptest"
+ 	"os"
+@@ -23,8 +24,36 @@ func TestCoreTaskLifecyclePG(t *testing.T) {
+ 		t.Skipf("postgres unavailable (%v) — skipping", err)
+ 	}
+ 	defer m.Close()
++	// A shared test database may contain another test's default profile or
++	// concurrency limit. Pin a local provider and restore the scheduler setting;
++	// this test must not depend on external credentials or other tasks finishing.
++	defer restoreConcurrencySetting(t, m)()
++	if err := m.SetConcurrency(false, 1); err != nil {
++		t.Fatal(err)
++	}
++	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		w.Header().Set("Content-Type", "application/json")
++		_, _ = w.Write([]byte(`{"id":"core-fixture","choices":[{"index":0,"message":{"role":"assistant","content":"fixture completed"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
++	}))
++	defer provider.Close()
++	profileID, err := m.pg.SaveProfile(&db.LLMProfile{
++		Name: fmt.Sprintf("core-lifecycle-%d", time.Now().UnixNano()), Format: "openai",
++		BaseURL: provider.URL, APIKey: "test-only", Model: "core-fixture", PoolExclude: true,
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer m.pg.DeleteProfile(profileID)
+ 	td := t.TempDir()
+-	s := New(context.Background(), m, td, td, td)
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	s := New(ctx, m, td, td, td)
++	defer func() {
++		cancel()
++		for _, task := range m.List() {
++			s.engine.StopTask(task.ID)
++		}
++	}()
+ 	h := s.Handler()
+ 	tok, err := signJWT(s.currentJWTKey())
+ 	if err != nil {
+@@ -62,7 +91,7 @@ func TestCoreTaskLifecyclePG(t *testing.T) {
+ 	}
+ 
+ 	// create a task → 201, returns PG task (string id + exploration_id)
+-	code, out := doRetry("POST", "/api/tasks", map[string]string{"description": "smoke", "goal": "测试 SQLi/XSS"})
++	code, out := doRetry("POST", "/api/tasks", map[string]any{"description": "smoke", "goal": "测试 SQLi/XSS", "llm_profile_ids": []int64{profileID}})
+ 	if code != 201 {
+ 		t.Fatalf("create task: %d (%v)", code, out)
+ 	}
+diff --git a/web/src/app/(main)/system/settings/_components/update-card.tsx b/web/src/app/(main)/system/settings/_components/update-card.tsx
+index 3c07939..2d8a9c2 100644
+--- a/web/src/app/(main)/system/settings/_components/update-card.tsx
++++ b/web/src/app/(main)/system/settings/_components/update-card.tsx
+@@ -228,6 +228,14 @@ export function UpdateCard() {
+           )}
+         </div>
+ 
++        {info?.repo && (
++          <p className="text-muted-foreground text-xs">
++            {info.repo === "xiaozhu456/pojun-hostfix" ? "宿主工具修复通道" : "更新来源"}：
++            <span className="font-mono">{info.repo}</span>
++            {info.repo === "xiaozhu456/pojun-hostfix" && " · 仅提供已合并修复并通过验证的版本"}
++          </p>
++        )}
++
+         {info?.boot_notice && (
+           <p className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-amber-700 text-xs dark:text-amber-400">
+             <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" />
